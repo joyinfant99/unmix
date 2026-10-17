@@ -1,0 +1,9 @@
+#!/bin/bash
+# Runs as root after Unmix.app is copied. Clear quarantine, then (re)open the app for the logged-in user.
+APP=/Applications/Unmix.app
+xattr -dr com.apple.quarantine "$APP" 2>/dev/null
+USER_NAME=$(stat -f%Su /dev/console)
+if [ -n "$USER_NAME" ] && [ "$USER_NAME" != "root" ]; then
+  sudo -u "$USER_NAME" /usr/bin/open "$APP" || true
+fi
+exit 0

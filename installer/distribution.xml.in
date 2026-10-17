@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+  <title>Unmix</title>
+  <welcome file="welcome.html"/>
+  <options customize="never" require-scripts="false"/>
+  <volume-check script="checkVolume()"/>
+  <installation-check script="checkSystem()"/>
+  <script><![CDATA[
+    var MIN_MACOS = '12.0', MIN_RAM_GB = 8, REC_RAM_GB = 16, MIN_FREE_GB = 10;
+
+    function fail(title, msg) {
+      my.result.type = 'Fatal'; my.result.title = title; my.result.message = msg; return false;
+    }
+    function verCmp(a, b) {
+      var x = a.split('.'), y = b.split('.');
+      for (var i = 0; i < 3; i++) { var d = (parseInt(x[i] || 0, 10)) - (parseInt(y[i] || 0, 10)); if (d) return d; }
+      return 0;
+    }
+    // Whole-machine checks (chip, macOS, memory)
+    function checkSystem() {
+      if (system.sysctl('hw.optional.arm64') != 1)
+        return fail('Apple Silicon required', 'Unmix needs a Mac with an Apple Silicon chip (M1 or newer). This Mac has an Intel processor, so Unmix was not installed.');
+      if (verCmp(system.version.ProductVersion, MIN_MACOS) < 0)
+        return fail('macOS update required', 'Unmix needs macOS ' + MIN_MACOS + ' or newer. This Mac is on ' + system.version.ProductVersion + '. Update macOS and run the installer again.');
+      var gb = system.sysctl('hw.memsize') / 1073741824;
+      if (gb < MIN_RAM_GB - 0.5)
+        return fail('Not enough memory', 'Unmix needs at least ' + MIN_RAM_GB + ' GB of memory. This Mac has ' + Math.round(gb) + ' GB.');
+      if (gb < REC_RAM_GB - 0.5) {
+        my.result.type = 'Warning'; my.result.title = 'Limited memory';
+        my.result.message = 'This Mac has ' + Math.round(gb) + ' GB of memory. Unmix will run, but long songs may be slow. ' + REC_RAM_GB + ' GB or more is recommended.';
+      }
+      return true;
+    }
+    // Destination-disk check (the AI models download on first use)
+    function checkVolume() {
+      var freeGB = my.target.availableKilobytes / 1048576;
+      if (freeGB < MIN_FREE_GB)
+        return fail('Not enough disk space', 'Unmix and its AI models need about ' + MIN_FREE_GB + ' GB free. This disk has ' + freeGB.toFixed(1) + ' GB. Free up space and run the installer again.');
+      return true;
+    }
+  ]]></script>
+  <choices-outline><line choice="default"><line choice="dev.unmix.app"/></line></choices-outline>
+  <choice id="default"/>
+  <choice id="dev.unmix.app" visible="false"><pkg-ref id="dev.unmix.app"/></choice>
+  <pkg-ref id="dev.unmix.app" version="@VERSION@" onConclusion="none">Unmix-component.pkg</pkg-ref>
+</installer-gui-script>

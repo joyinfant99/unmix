@@ -1,0 +1,13 @@
+.venv/
+models/
+data/
+dist/
+build/
+__pycache__/
+.DS_Store
+*.spec
+timings.json
+config.json
+eval/
+cloud/
+bin/
