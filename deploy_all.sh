@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 V="${1:?version, e.g. 1.2.0}"; NOTES="${2:-Unmix $V}"
-BANDOS="${BANDOS_ROOT:-$HOME/Desktop/COLLECTIONS/CODING/LIVE/BandOS/Production}"
+BANDOS="${BANDOS_ROOT:-$(cd .. && pwd)/Production}"
 
 if [ -z "${SKIP_BACKEND:-}" ]; then
   echo "==> Backend (Fly)"

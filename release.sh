@@ -9,7 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 V="${1:?version, e.g. 1.2.0}"; NOTES="${2:-Unmix $V}"
-BACKEND="${BANDOS_BACKEND:-$HOME/Desktop/COLLECTIONS/CODING/LIVE/BandOS/Production/backend}"
+BACKEND="${BANDOS_BACKEND:-$(cd .. && pwd)/Production/backend}"
 [ -f "$BACKEND/scripts/publish-unmix-release.js" ] || { echo "BandOS backend not found at $BACKEND (set BANDOS_BACKEND)"; exit 1; }
 
 ./build_app.sh "$V"

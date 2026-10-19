@@ -134,3 +134,20 @@ If the app does not open after installing, see Troubleshooting.
 ## Building a downloadable app (.dmg)
 
 `./build_app.sh [version]` produces `dist/Unmix.app` and `dist/Unmix-<version>.pkg` (PyInstaller, ad-hoc signed). Models are not bundled; they download on first use into `~/Library/Application Support/Unmix` (which also holds the library). Without a paid Apple Developer account the app is not notarized, so first launch needs right-click > Open (or `xattr -dr com.apple.quarantine /Applications/Unmix.app`). Apple Silicon only (built on arm64).
+
+## Signing and notarizing (removes the "Apple could not verify" warning)
+
+By default `build_app.sh` makes an ad-hoc signed installer, so macOS warns on first open (users click Open Anyway in System Settings, Privacy & Security). To ship an installer that opens with no warning you need a paid Apple Developer Program membership and, once:
+
+1. In Xcode (Settings, Accounts, Manage Certificates) or on developer.apple.com create two certificates: **Developer ID Application** and **Developer ID Installer**. `security find-identity -v` then lists them.
+2. Create an app-specific password at appleid.apple.com, then store notarization credentials: `xcrun notarytool store-credentials unmix-notary --apple-id <you> --team-id <TEAMID> --password <app-specific-password>`.
+3. Build with the identities in the environment (the `release.sh` and `deploy_all.sh` scripts pass them through):
+
+```
+export DEVELOPER_ID_APP="Developer ID Application: Your Name (TEAMID)"
+export DEVELOPER_ID_INSTALLER="Developer ID Installer: Your Name (TEAMID)"
+export NOTARY_PROFILE=unmix-notary
+./build_app.sh
+```
+
+The build signs with the hardened runtime (`installer/entitlements.plist`), submits the installer to Apple, waits, and staples the ticket. Set all three or none: a partial setup stops with an error.
