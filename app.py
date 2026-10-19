@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import platform
 import queue
 import re
 import shutil
@@ -10,6 +11,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -790,12 +792,89 @@ VERSION = (ROOT / "VERSION").read_text().strip() if (ROOT / "VERSION").exists() 
 update_state: dict = {"phase": "idle", "error": None, "progress": 0.0}
 
 
+def _sysctl(name: str) -> str:
+    try:
+        return subprocess.run(["sysctl", "-n", name], capture_output=True, text=True, timeout=3).stdout.strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _install_info() -> dict:
+    """Anonymous facts sent with the update check so Band OS can count installs and versions: a random id made
+    on first run (not tied to you), the macOS version, chip, Mac model and memory. No files, names or audio."""
+    iid = _cfg().get("install_id")
+    if not iid:
+        iid = str(uuid.uuid4())
+        _save_cfg(install_id=iid)
+    mem = _sysctl("hw.memsize")
+    return {
+        "id": iid,
+        "os": platform.mac_ver()[0],
+        "chip": _sysctl("machdep.cpu.brand_string") or platform.machine(),
+        "model": _sysctl("hw.model"),
+        "ram": round(int(mem) / 2**30) if mem.isdigit() else "",
+    }
+
+
 def _latest_release() -> dict | None:
     """The newer version offered by the server (version, notes, size, sha256, url), or None."""
-    req = urllib.request.Request(f"{UPDATE_API}?current={urllib.parse.quote(VERSION)}", headers={"User-Agent": f"Unmix/{VERSION}"})
+    query = urllib.parse.urlencode({"current": VERSION, **_install_info()})
+    req = urllib.request.Request(f"{UPDATE_API}?{query}", headers={"User-Agent": f"Unmix/{VERSION}"})
     with urllib.request.urlopen(req, timeout=8) as r:
         rel = json.load(r)["data"]
     return rel if rel.get("available") else None
+
+
+# --- confirm your email (first launch, installed app only) ---------------------
+# The app asks which email downloaded it, Band OS emails a 6 digit code, and a confirmed email is linked to this
+# install so the Band OS admin can see who uses Unmix. Skipping keeps the install anonymous.
+LINK_API = UPDATE_API.rsplit("/", 1)[0] + "/link"
+
+
+def _link_call(path: str, body: dict) -> None:
+    req = urllib.request.Request(f"{LINK_API}/{path}", data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json", "User-Agent": f"Unmix/{VERSION}"})
+    try:
+        urllib.request.urlopen(req, timeout=15).read()
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.load(e).get("error")
+        except Exception:  # noqa: BLE001
+            msg = None
+        raise HTTPException(400, msg or "Could not reach Band OS. Please try again.")
+    except Exception:  # noqa: BLE001
+        raise HTTPException(400, "Could not reach Band OS. Check your internet connection.")
+
+
+class EmailBody(BaseModel):
+    email: str
+    code: str = ""
+
+
+@app.get("/api/install/status")
+def install_status():
+    cfg = _cfg()
+    return {"ask": bool(getattr(sys, "frozen", False)) and not cfg.get("install_email") and not cfg.get("link_skipped"),
+            "email": cfg.get("install_email")}
+
+
+@app.post("/api/install/request")
+def install_request(b: EmailBody):
+    _link_call("request", {"email": b.email})
+    return {"ok": True}
+
+
+@app.post("/api/install/confirm")
+def install_confirm(b: EmailBody):
+    _link_call("confirm", {"email": b.email, "code": b.code, "id": _install_info()["id"], "current": VERSION})
+    _save_cfg(install_email=b.email.strip().lower())
+    return {"ok": True}
+
+
+@app.post("/api/install/skip")
+def install_skip():
+    _save_cfg(link_skipped=True)
+    return {"ok": True}
 
 
 @app.get("/api/version")

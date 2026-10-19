@@ -10,6 +10,7 @@ Formerly called StemSep, then Prism. Now **Unmix** (shown as Band OS Unmix on ba
 
 - **Download:** https://bandosapp.com/unmix (Mac only, Apple Silicon). The installer is free; the page asks for an email address and a 6 digit code sent to it before the download starts.
 - **Open source:** the code is MIT licensed (`LICENSE`); third-party components keep their own licences (`NOTICE.md`). Issues and pull requests are welcome. To build it yourself, see "Developing and testing" below.
+- **Install stats:** installed copies send an anonymous install id, their version, macOS version, chip, Mac model and memory with the update check (nothing else), and on first launch the app offers to confirm the user's email with a 6 digit code (skippable). They show on the Unmix page of the Band OS admin portal, which also lists release versions and dates.
 - **Updates:** the installed app asks the Band OS server for a newer version when it starts and offers "Update and restart". Publishing a version: `./release.sh <version> "notes"` builds the installer, uploads it to the download storage and tags the source (needs the BandOS backend checkout; see `release.sh`).
 
 ## Using it

@@ -755,6 +755,36 @@ refreshLibrary(); setInterval(refreshLibrary, 8000);
   load();
 })();
 </script>
+<div id="lnk" class="modal" hidden><div class="box" role="dialog" aria-label="Confirm your email" style="width:min(440px,100%)">
+  <h3>Which email did you download Unmix with?</h3>
+  <div class="stat" id="lnkTxt">Band OS sends a 6 digit code to confirm it is you, so we know who uses Unmix and can reach you about updates. No audio or files are ever sent. You can skip this.</div>
+  <div class="row" id="lnkR1"><input class="pp" id="lnkEmail" type="email" autocomplete="email" placeholder="you@email.com"><button class="btn pri" id="lnkSend">Send code</button></div>
+  <div class="row" id="lnkR2" hidden><input class="pp" id="lnkCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="123456"><button class="btn pri" id="lnkOk">Confirm</button></div>
+  <div id="lnkErr" class="err" hidden></div>
+  <div class="row"><button class="btn" id="lnkSkip">Skip</button></div>
+</div></div>
+<script>
+/* ---------- confirm your email (installed app, first launch) ---------- */
+(async function () {
+  const box = $('lnk'), err = $('lnkErr');
+  let st; try { st = await api('/api/install/status'); } catch { return; }
+  if (!st.ask) return;
+  const show = m => { err.textContent = m; err.hidden = !m; };
+  $('lnkSkip').onclick = async () => { box.hidden = true; try { await post('/api/install/skip', {}); } catch {} };
+  $('lnkSend').onclick = async () => {
+    const email = $('lnkEmail').value.trim(); if (!email) return;
+    show(''); $('lnkSend').disabled = true;
+    try { await post('/api/install/request', {email}); $('lnkR1').hidden = true; $('lnkR2').hidden = false; $('lnkTxt').textContent = `We sent a code to ${email}. It works for 15 minutes.`; $('lnkCode').focus(); }
+    catch (e) { show(e.message); } finally { $('lnkSend').disabled = false; }
+  };
+  $('lnkOk').onclick = async () => {
+    show(''); $('lnkOk').disabled = true;
+    try { await post('/api/install/confirm', {email: $('lnkEmail').value.trim(), code: $('lnkCode').value.trim()}); box.hidden = true; }
+    catch (e) { show(e.message); } finally { $('lnkOk').disabled = false; }
+  };
+  setTimeout(() => { box.hidden = false; $('lnkEmail').focus(); }, 1500);
+})();
+</script>
 <div id="upd" hidden style="position:fixed;right:18px;bottom:18px;z-index:99;max-width:320px;padding:14px 16px;border-radius:12px;background:#1d1d22;color:#eee;border:1px solid #333;box-shadow:0 8px 30px #0008;font:13px/1.4 -apple-system,system-ui">
   <div id="updMsg"></div>
   <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
