@@ -26,6 +26,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
+import analysis
 import openq
 
 ROOT = Path(__file__).parent  # read-only resources (index.html, vendor/); inside the bundle when frozen
@@ -284,6 +285,161 @@ def heal_file(src: Path, dst: Path) -> None:
         inference.run_inference(str(src), str(dst), ck, "cpu", **kw)
 
 
+# --- transpose and tempo -----------------------------------------------------
+# The mixer asks for every stem at the project's key shift and tempo. Each stem is rendered once by ffmpeg
+# (asetrate + atempo, no extra libraries) into a cache folder and reused; the .umx file only stores the two numbers.
+SHIFT_CACHE = STATE / "cache" / "shift"
+SHIFT_CACHE.mkdir(parents=True, exist_ok=True)
+SEMI_MAX = 12                # one octave either way
+TEMPO_MIN, TEMPO_MAX = 0.5, 2.0  # speed relative to the original (ffmpeg's atempo range)
+UNPITCHED = {"drums"}        # drums have no pitch: they follow the tempo but are never transposed
+_shift_locks: dict[str, threading.Lock] = {}
+_shift_guard = threading.Lock()
+
+
+def _atempo_chain(semi: int, tempo: float) -> str:
+    """Pitch up by resampling (which also speeds up), then correct the speed to the wanted tempo."""
+    ratio = 2 ** (semi / 12)
+    parts = [f"asetrate={SR * ratio:.4f}", f"aresample={SR}"] if semi else []
+    f = tempo / ratio
+    while f > 2.0:
+        parts.append("atempo=2.0")
+        f /= 2
+    while f < 0.5:
+        parts.append("atempo=0.5")
+        f *= 2
+    if abs(f - 1) > 1e-6:
+        parts.append(f"atempo={f:.6f}")
+    return ",".join(parts)
+
+
+def _env_1khz(x: np.ndarray) -> np.ndarray:
+    m = np.abs(x).max(axis=1)
+    n = len(m) // 44
+    return m[: n * 44].reshape(n, 44).max(axis=1)
+
+
+def _early_samples(orig: np.ndarray, out: np.ndarray, tempo: float, search_ms: int = 80) -> int:
+    """ffmpeg's tempo change starts its output 10-40 ms early, by a different amount for each chain. Compare the
+    loudness outline with the original (time-scaled) and return how many samples `out` is early, so every stem
+    can be put back on the same grid. 0 when the stem has no outline to compare."""
+    from scipy.signal import fftconvolve  # noqa: PLC0415
+
+    eo, ey = _env_1khz(orig), _env_1khz(out)
+    if len(eo) < 500 or len(ey) < 500 or ey.max() < 1e-4:
+        return 0
+    ref = np.interp(np.arange(len(ey)) * tempo, np.arange(len(eo)), eo, right=0)
+    smooth = lambda e: np.sqrt(np.convolve(e, np.ones(8) / 8, "same"))  # noqa: E731
+    a, b = smooth(ref), smooth(ey)
+    a, b = a - a.mean(), b - b.mean()
+    den = np.linalg.norm(a) * np.linalg.norm(b)
+    if den == 0:
+        return 0
+    c = fftconvolve(a, b[::-1], mode="full") / den
+    lags = np.arange(-len(b) + 1, len(a))
+    c = np.where(np.abs(lags) <= search_ms, c, -np.inf)
+    i = int(np.argmax(c))
+    return int(lags[i] * SR / 1000) if c[i] >= 0.3 else 0  # a stem with no clear outline is left alone
+
+
+# Best quality: Rubber Band (the "finer" engine), run as a separate program like ffmpeg. About 6 s per minute of audio.
+# Fast preview: ffmpeg, a few seconds per song. If the Rubber Band helper is missing or fails, ffmpeg is used instead.
+RUBBERBAND = ROOT / "vendor" / "rubberband" / "unmix-stretch"
+
+
+def _render_rubberband(path: Path, semi: int, tempo: float, formant: bool) -> np.ndarray:
+    x, _ = sf.read(path, always_2d=True, dtype="float32")
+    with tempfile.TemporaryDirectory() as td:
+        a, b = Path(td) / "in.f32", Path(td) / "out.f32"
+        a.write_bytes(np.ascontiguousarray(x[:, :2], dtype="<f4").tobytes())
+        subprocess.run([str(RUBBERBAND), str(a), str(b), "2", str(SR), f"{tempo:.6f}", str(semi), "1" if formant else "0"],
+                       check=True, timeout=1800)
+        return np.frombuffer(b.read_bytes(), dtype="<f4").reshape(-1, 2).copy()
+
+
+def _render_ffmpeg(path: Path, semi: int, tempo: float, raw: Path) -> np.ndarray:
+    subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-i", str(path), "-af", _atempo_chain(semi, tempo),
+                    "-ar", str(SR), "-ac", "2", "-c:a", "pcm_f32le", str(raw)], check=True)
+    orig, _ = sf.read(path, always_2d=True, dtype="float32")
+    y, _ = sf.read(raw, always_2d=True, dtype="float32")
+    early = _early_samples(orig, y, tempo)  # ffmpeg starts early by an amount that differs per stem
+    if early > 0:
+        y = np.pad(y, ((early, 0), (0, 0)))
+    elif early < 0:
+        y = y[-early:]
+    return y
+
+
+def shifted_file(path: Path, semi: int, tempo: float, hq: bool = True) -> Path:
+    """The stem at `semi` semitones and `tempo` times the speed (cached). `path` itself when nothing changes."""
+    if semi == 0 and abs(tempo - 1) < 1e-4:
+        return path
+    st = path.stat()
+    engine = "rb" if hq and RUBBERBAND.exists() else "ff"
+    key = hashlib.sha1(f"{path.resolve()}|{st.st_mtime_ns}|{st.st_size}|{semi}|{tempo:.4f}|{engine}".encode()).hexdigest()[:24]
+    out = SHIFT_CACHE / f"{key}.wav"
+    with _shift_guard:
+        lock = _shift_locks.setdefault(key, threading.Lock())
+    with lock:  # the mixer asks for all stems at once; two requests for the same file render it only once
+        if out.exists():
+            os.utime(out)
+            return out
+        raw, tmp = SHIFT_CACHE / f"{key}.raw.wav", SHIFT_CACHE / f"{key}.tmp.wav"
+        try:
+            orig_frames = sf.info(path).frames
+            y = None
+            if engine == "rb":
+                try:
+                    y = _render_rubberband(path, semi, tempo, formant=path.name.startswith("vocals__"))
+                except (OSError, subprocess.SubprocessError, ValueError):
+                    y = None  # the helper could not run on this Mac: fall back to ffmpeg
+            if y is None:
+                y = _render_ffmpeg(path, semi, tempo, raw)
+            frames = int(round(orig_frames / tempo))
+            y = y[:frames] if len(y) >= frames else np.pad(y, ((0, frames - len(y)), (0, 0)))
+            floaty = sf.info(path).subtype == "FLOAT"
+            sf.write(tmp, y if floaty else np.clip(y, -1, 1), SR, subtype="FLOAT" if floaty else "PCM_16")
+            tmp.replace(out)
+        finally:
+            raw.unlink(missing_ok=True)
+            tmp.unlink(missing_ok=True)
+    _prune_shift_cache()
+    return out
+
+
+def _prune_shift_cache(limit_gb: float = 3.0) -> None:
+    """Rendered copies are disposable: keep the cache under a size limit, dropping the least recently used."""
+    try:
+        files = sorted((f for f in SHIFT_CACHE.glob("*.wav") if f.name.count(".") == 1), key=lambda f: f.stat().st_mtime)
+        total = sum(f.stat().st_size for f in files)
+        while files and total > limit_gb * 1e9:
+            f = files.pop(0)
+            total -= f.stat().st_size
+            f.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def with_mix(path: Path, semi: int, tempo: float, hq: bool = True) -> Path:
+    """Apply the project's key shift and tempo to one stem file (drums only follow the tempo)."""
+    if abs(semi) > SEMI_MAX or not TEMPO_MIN <= tempo <= TEMPO_MAX:
+        raise HTTPException(400, "Key shift is limited to one octave and tempo to 50% to 200%")
+    if path.name.split("__")[0] in UNPITCHED:
+        semi = 0
+    try:
+        return shifted_file(path, semi, tempo, hq)
+    except (OSError, subprocess.CalledProcessError, RuntimeError) as e:
+        raise HTTPException(500, f"Could not change the key or tempo: {e}") from e
+
+
+def mix_of(job: dict) -> tuple[int, float]:
+    m = job.get("mix") or {}
+    return int(m.get("semitones", 0)), float(m.get("tempo", 1.0))
+
+
+_prune_shift_cache()
+
+
 # --- planning --------------------------------------------------------------
 class PlanReq(BaseModel):
     source_id: str
@@ -425,6 +581,26 @@ def run_heal_one(job_id: str, stem: str) -> None:
         save_job(job)
 
 
+def run_analysis(job_id: str) -> None:
+    """Find the key, tempo, beat map and time signature. Anything unclear is stored as 'not found' with the reason."""
+    job = jobs.get(job_id)
+    if not job or job_id not in PATHS:
+        return
+    try:
+        out = pdir(job_id)
+        files = {st["name"]: out / st["variants"][st["default"]] for st in job["stems"]}
+        job["analysis"] = analysis.analyze_project({k: p for k, p in files.items() if p.exists()}, out / "source.wav")
+    except Exception as e:  # noqa: BLE001  (analysis is a bonus: it must never get in the way of the project)
+        job["analysis"] = {"version": 1, "key": {"found": False, "reason": f"Analysis failed: {e}"},
+                           "tempo": {"found": False, "reason": f"Analysis failed: {e}"}}
+    finally:
+        job.pop("analyzing", None)
+        try:
+            save_job(job)
+        except HTTPException:  # the project was removed while it ran
+            pass
+
+
 def worker() -> None:
     while True:
         kind, arg = tasks.get()
@@ -433,6 +609,11 @@ def worker() -> None:
             if kind == "job":
                 jobs[arg]["started"] = time.time()
                 run_job(arg)
+                if jobs[arg].get("status") == "done":
+                    jobs[arg]["analyzing"] = True
+                    run_analysis(arg)
+            elif kind == "analyze":
+                run_analysis(arg)
             elif kind == "heal":
                 run_heal_one(*arg)
         except Exception as e:  # noqa: BLE001
@@ -485,6 +666,7 @@ def register(pkg: Path) -> str | None:
     job = _read(pkg / "job.json")
     if job:
         job["source_id"] = pid
+        job.pop("analyzing", None)  # an analysis that was cut short by closing the app starts again when the project opens
         if job.get("status") in ("queued", "running"):
             job.update(status="error", error="Interrupted: Unmix was closed while this was running.")
         jobs[pid] = job
@@ -1029,7 +1211,7 @@ def run(req: PlanReq):
             shutil.rmtree(f) if f.is_dir() else f.unlink()
     jobs[pid] = {"id": pid, "source_id": pid, "req": req.model_dump(), "plan": p, "steps": p["steps"],
                  "stems": [], "status": "queued", "started": time.time(), "title": sources[pid]["title"],
-                 "duration": sources[pid].get("duration")}
+                 "duration": sources[pid].get("duration"), "mix": (old or {}).get("mix") or {"semitones": 0, "tempo": 1.0}}
     save_job(jobs[pid])
     tasks.put(("job", pid))
     return {"id": pid}
@@ -1116,12 +1298,42 @@ def heal_stem(jid: str, stem: str):
     return {"ok": True}
 
 
+class MixReq(BaseModel):
+    semitones: int = 0
+    tempo: float = 1.0  # speed relative to the original: 1.0 = unchanged
+
+
+@app.put("/api/jobs/{jid}/mix")
+def set_mix(jid: str, req: MixReq):
+    """Remember the key shift and tempo in the project file (the stems themselves are rendered on request)."""
+    job = jobs.get(jid)
+    if not job:
+        raise HTTPException(404)
+    if abs(req.semitones) > SEMI_MAX or not TEMPO_MIN <= req.tempo <= TEMPO_MAX:
+        raise HTTPException(400, "Key shift is limited to one octave and tempo to 50% to 200%")
+    job["mix"] = {"semitones": req.semitones, "tempo": round(req.tempo, 4)}
+    save_job(job)
+    return job["mix"]
+
+
+@app.post("/api/jobs/{jid}/analyze")
+def analyze_job(jid: str):
+    """Key, tempo and time signature of a finished project (older projects are analysed the first time they open)."""
+    job = jobs.get(jid)
+    if not job or job.get("status") != "done":
+        raise HTTPException(404)
+    if "analysis" not in job and not job.get("analyzing"):
+        job["analyzing"] = True
+        tasks.put(("analyze", jid))
+    return {"ok": True}
+
+
 @app.get("/api/jobs/{jid}/files/{name}")
-def get_file(jid: str, name: str):
+def get_file(jid: str, name: str, semi: int = 0, tempo: float = 1.0, fast: bool = False):
     path = pdir(jid) / Path(name).name
     if jid not in jobs or not path.is_file():
         raise HTTPException(404)
-    return FileResponse(path, headers={"Cache-Control": "no-cache"})
+    return FileResponse(with_mix(path, semi, tempo, hq=not fast), headers={"Cache-Control": "no-cache"})
 
 
 # --- bounce: export to wherever the user chooses -------------------------------
@@ -1200,8 +1412,9 @@ def bounce_stems(req: BounceStems):
     if not folder:
         return {"path": None}
     try:
+        semi, tempo = mix_of(job)
         for st in job["stems"]:
-            _write_audio(pdir(req.id) / st["variants"][st["default"]], req.fmt,
+            _write_audio(with_mix(pdir(req.id) / st["variants"][st["default"]], semi, tempo), req.fmt,
                          Path(folder) / f"{_safe_name(job['title'])} - {_safe_name(st['label'])}.{req.fmt}")
     except (OSError, subprocess.CalledProcessError) as e:
         raise HTTPException(500, f"Couldn't save there: {e}") from e

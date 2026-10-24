@@ -11,3 +11,4 @@ config.json
 eval/
 cloud/
 bin/
+cache/

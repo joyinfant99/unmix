@@ -30,6 +30,7 @@ rm -rf build dist
   --add-data index.html:. \
   --add-data VERSION:. \
   --add-data vendor/apollo:vendor/apollo \
+  --add-binary vendor/rubberband/unmix-stretch:vendor/rubberband \
   --collect-all audio_separator \
   --collect-all webview \
   --collect-all yt_dlp \

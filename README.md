@@ -31,6 +31,7 @@ Formerly called StemSep, then Prism. Now **Unmix** (shown as Band OS Unmix on ba
 3. **Process:** live per-step progress.
 4. **Mix:** all stems are rendered first and time-aligned, then loaded together. Per-stem Heal with a Split/Healed A/B switch.
 5. **Bounce:** the only place a file format (WAV, FLAC, MP3 320) is chosen. Either the mix as heard (mutes, solos, volumes applied) or each stem as its own file, saved wherever you pick. The project is never modified by a bounce.
+**Key, tempo and transpose:** after a split Unmix looks for the song's key (major or minor), tempo, beat map and time signature (`analysis.py`, librosa, nothing new installed). Anything unclear shows **N/A** with the reason on hover; a key or tempo is only reported when it holds for most of the song (coverage is shown). Above the tracks is a Logic-style display: transpose by semitones or an octave (-12 to +12), change tempo by typing BPM (or % when no tempo was found), and a ruler plus faint beat lines show the beat map. Every stem follows (drums only follow the tempo, they are never pitched). The two numbers are saved in the project file (`job.json`: `mix`, with the findings in `analysis`) and survive Save, Save a copy and Split again. Stems are rendered on demand into a disposable cache (`cache/shift`, capped at 3 GB). It is hybrid: ffmpeg makes a quick version that plays within seconds, and Rubber Band (the "finer" engine, the separate `vendor/rubberband/unmix-stretch` program bundled in the app) renders the best-quality version in the background and replaces it when ready (about 45 seconds for a 6 minute song; vocals keep their formants). If the Rubber Band program cannot run, ffmpeg is used. Limits: modes such as Lydian are not told apart from major/minor, only 4/4, 3/4 and 6/8 are looked for, and 6/8 is often N/A.
 **Split again** (toolbar) re-runs the split on the project's own audio with the previous settings; there is no re-upload.
 
 ## How it works
@@ -79,7 +80,8 @@ Benchmarked on Colab's free T4 (180 s song). The T4 was only about 1.3-1.6x fast
 ## Files
 
 ```
-app.py            backend: planning, pipelines, API
+app.py            backend: planning, pipelines, API, key/tempo rendering
+analysis.py       key, tempo, beat map and time signature detection
 index.html        the whole UI (upload, goal pop-up, progress, mixer); Band OS palette and Space Grotesk font embedded
 run.sh            start the window from a terminal
 dev.sh            development mode: run from source, auto-restart on .py changes, port 8799

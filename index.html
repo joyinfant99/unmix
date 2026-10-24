@@ -53,7 +53,7 @@
   .modal .stat { color:var(--mute); font-size:12.5px; } .modal .err { color:var(--err); font-size:13px; margin-top:10px; } .modal .warn { color:var(--warn); font-size:13px; margin:8px 0; }
   .modal .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; } .modal input.pp { flex:1; min-width:200px; height:38px; padding:0 10px; border-radius:9px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font:inherit; font-size:13px; }
   .modal .help { color:var(--mute); font-size:12.5px; margin-top:14px; line-height:1.5; border-top:1px solid var(--line); padding-top:12px; }
-  body.collapsed #storBtn { display:none; }
+  body.collapsed #storBtn, body.collapsed #verBtn { display:none; }
   .empty { padding:18px 14px; color:var(--mute); font-size:13px; text-align:center; }
   .side-foot { border-top:1px solid var(--line); padding:12px 18px; display:flex; align-items:center; gap:9px; font-size:12px; color:var(--mute); height:46px; }
   .dot-s { width:9px; height:9px; border-radius:50%; background:#e0a030; flex:none; box-shadow:0 0 0 3px rgba(224,160,48,.18); }
@@ -151,6 +151,30 @@
   .run .mute { margin:18px 0 0; font-size:13px; }
   .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:r 1s linear infinite; vertical-align:-1px; margin-right:6px; } @keyframes r { to { transform:rotate(360deg); } }
   @media (max-width:900px) { .choices { grid-template-columns:1fr; } }
+
+  /* key / tempo / transpose display (modelled on the Logic Pro transport display) */
+  .lcd { display:flex; flex-wrap:wrap; gap:1px; background:#2a2a27; border:1px solid #2a2a27; border-radius:12px; overflow:hidden; margin-bottom:12px; box-shadow:var(--shadow); transition:opacity .15s; }
+  .lcd.busy { opacity:.6; pointer-events:none; }
+  .lcd .cell { display:flex; flex-direction:column; justify-content:center; gap:3px; padding:9px 16px 8px; background:#151513; color:#ecebe6; min-width:118px; }
+  .lcd .cell.end { margin-left:auto; justify-content:center; flex-direction:row; align-items:center; gap:8px; min-width:0; }
+  .lcd .lab { font-size:10px; letter-spacing:.11em; text-transform:uppercase; color:#8c8a82; font-weight:600; }
+  .lcd .val { font:600 22px/1.15 ui-monospace,"SF Mono",Menlo,monospace; color:#f3f1ea; font-variant-numeric:tabular-nums; letter-spacing:-.02em; white-space:nowrap; }
+  .lcd .val.na { color:#6e6c65; font-size:18px; }
+  .lcd .val.chg, .lcd input.val.chg { color:var(--accent); }
+  .lcd .sub { font-size:11px; color:#8c8a82; min-height:15px; max-width:230px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lcd .ctrl { display:flex; align-items:center; gap:3px; }
+  .lcd .unit { font-size:11px; color:#8c8a82; font-weight:600; margin-left:2px; }
+  .lcd input.val { width:76px; padding:0 2px; border:1px solid transparent; border-radius:6px; background:transparent; text-align:center; outline:none; }
+  .lcd input.val.sm { width:52px; }
+  .lcd input.val:hover { border-color:#3a3a36; } .lcd input.val:focus { border-color:var(--accent); background:#0e0e0d; }
+  .lcd .lb { height:26px; min-width:26px; padding:0 7px; border-radius:7px; border:0; background:#262623; color:#ecebe6; font:600 14px inherit; cursor:pointer; }
+  .lcd .lb:hover:not(:disabled) { background:#34342f; } .lcd .lb:disabled { opacity:.3; cursor:not-allowed; }
+  .lcd .lb.t { font-size:10.5px; letter-spacing:.02em; padding:0 6px; }
+  .ruler { display:grid; grid-template-columns:var(--ctlw) 1fr; height:26px; border-bottom:1px solid var(--line); background:var(--card); }
+  .ruler .rl { display:flex; align-items:center; padding:0 12px; border-right:1px solid var(--line); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--mute); font-weight:600; }
+  .ruler .rw { position:relative; cursor:pointer; }
+  #tracksWrap { position:relative; }
+  #beatgrid { position:absolute; inset:auto; top:0; bottom:0; left:var(--ctlw); width:calc(100% - var(--ctlw)); height:100%; pointer-events:none; z-index:1; }
 </style>
 </head>
 <body>
@@ -183,6 +207,7 @@
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></symbol>
   <symbol id="i-bounce" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></symbol>
   <symbol id="i-open" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1M3 19l2.5-8H22l-2.5 8a1 1 0 0 1-1 .8H4a1 1 0 0 1-1-.8z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
   <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
 </svg>
 
@@ -196,7 +221,7 @@
   <div class="side-sec"><span>Recent unmixes <em id="libCount" style="font-style:normal;font-weight:500"></em></span></div>
   <div class="search"><svg class="i"><use href="#i-search"/></svg><input id="libSearch" placeholder="Search projects" autocomplete="off"></div>
   <div id="libList"></div>
-  <div class="side-foot" id="conn"><i class="dot-s"></i><span>Connecting…</span><button class="ibtn xs tip-end" id="storBtn" data-tip="Where new projects are saved" style="margin-left:auto"><svg class="i"><use href="#i-finder"/></svg></button></div>
+  <div class="side-foot" id="conn"><i class="dot-s"></i><span>Connecting…</span><button class="ibtn xs tip-end" id="verBtn" data-tip="Version and updates" style="margin-left:auto"><svg class="i"><use href="#i-info"/></svg></button><button class="ibtn xs tip-end" id="storBtn" data-tip="Where new projects are saved"><svg class="i"><use href="#i-finder"/></svg></button></div>
 </aside>
 
 <!-- ============ CONTENT ============ -->
@@ -255,7 +280,20 @@
 <!-- 5 MIXER -->
 <section class="panel" id="p5">
   <div class="mixhead"><span id="loadInfo"></span><span style="flex:1"></span><span>Space = play/pause · click a waveform to seek</span></div>
-  <div class="daw" id="daw"><div class="lane" id="lane"><div id="playhead"></div><div id="tracks"></div></div></div>
+  <div class="lcd hidden" id="lcd">
+    <div class="cell" id="keyCell" style="min-width:170px"><span class="lab">Key</span><span class="val" id="keyVal">…</span><span class="sub" id="keySub"></span></div>
+    <div class="cell"><span class="lab">Transpose</span>
+      <div class="ctrl"><button class="lb t" id="trOctDn" data-tip="Down an octave">&minus;8va</button><button class="lb" id="trDn" data-tip="Down a semitone">&minus;</button><input class="val sm" id="trVal" value="0" aria-label="Semitones" data-tip="Semitones. Type a number from -12 to 12"><button class="lb" id="trUp" data-tip="Up a semitone">+</button><button class="lb t" id="trOctUp" data-tip="Up an octave">+8va</button></div>
+      <span class="sub" id="trSub">semitones, drums stay put</span></div>
+    <div class="cell"><span class="lab">Tempo</span>
+      <div class="ctrl"><button class="lb" id="tpDn" data-tip="Slower">&minus;</button><input class="val" id="tpVal" value="" aria-label="Tempo"><button class="lb" id="tpUp" data-tip="Faster">+</button><span class="unit" id="tpUnit">BPM</span></div>
+      <span class="sub" id="tpSub"></span></div>
+    <div class="cell" id="sigCell" style="min-width:96px"><span class="lab">Signature</span><span class="val" id="sigVal">…</span><span class="sub" id="sigSub"></span></div>
+    <div class="cell end"><button class="lb t" id="mixReset" data-tip="Back to the original key and tempo">Reset</button></div>
+  </div>
+  <div class="daw" id="daw"><div class="lane" id="lane"><div id="playhead"></div>
+    <div class="ruler hidden" id="ruler"><div class="rl" id="rulerLab">Bars</div><div class="rw"><canvas id="rulerCv"></canvas></div></div>
+    <div id="tracksWrap"><div id="tracks"></div><canvas id="beatgrid"></canvas></div></div></div>
   <div id="healNote" class="note hidden" style="margin:14px 0 0"></div>
 </section>
 
@@ -270,6 +308,13 @@
   <label class="opt"><input type="radio" name="goalpick" value="clean"><span class="grow">Voice clean up<small>Removes noise and reverb from the whole recording. Best for speech, podcasts and calls</small></span><span class="time" data-g="clean"></span></label>
   <div class="help" id="goalNote">The best models for this Mac and this length of audio are chosen for you.</div>
   <div class="row" style="justify-content:flex-end"><button class="btn" id="goalCancel">Cancel</button><button class="btn pri" id="goalGo">Start</button></div>
+</div></div>
+<div id="verdlg" class="modal" hidden><div class="box" role="dialog" aria-label="Version and updates">
+  <h3>Unmix <span id="verNum"></span></h3>
+  <div class="stat" id="verMsg">Checking…</div>
+  <div class="help" id="verNotes" style="border:0;padding-top:0" hidden></div>
+  <div class="err" id="verErr" hidden></div>
+  <div class="row" style="justify-content:flex-end"><button class="btn" id="verClose">Close</button><button class="btn" id="verCheck">Check for updates</button><button class="btn pri" id="verGo" hidden>Update and restart</button></div>
 </div></div>
 <div id="deldlg" class="modal" hidden><div class="box" role="dialog" aria-label="Delete this unmix">
   <h3>Move to the Trash?</h3>
@@ -558,12 +603,13 @@ function setDensity(compact) {
   $('density').innerHTML = ico(compact ? 'expand' : 'shrink'); $('density').dataset.tip = compact ? 'Expand tracks' : 'Shrink tracks';
   $('density').classList.toggle('on', compact); relayout();
 }
-const relayout = () => setTimeout(() => { tracks.forEach(t => t.buf && drawWave(t)); updateClock(); }, 210);
+const relayout = () => setTimeout(() => { tracks.forEach(t => t.buf && drawWave(t)); drawGrid(); updateClock(); }, 210);
 $('density').onclick = () => setDensity(!$('daw').classList.contains('compact'));
 
 async function openMixer() {
   ctx = ctx || new (window.AudioContext || window.webkitAudioContext)({sampleRate: 44100});
   stopAll(); try { master && master.disconnect(); } catch {}
+  MIX = {semi: S.job.mix?.semitones || 0, tempo: S.job.mix?.tempo || 1}; APPLIED = {...MIX}; LOAD = {...MIX}; AN = S.job.analysis || null;
   master = ctx.createGain(); master.gain.value = 1; master.connect(ctx.destination);
   tracks = []; $('tracks').innerHTML = ''; go(5); $('loadInfo').innerHTML = '<span class="spin"></span>Loading stems…';
   setDensity(true);
@@ -591,15 +637,16 @@ async function openMixer() {
     dbIn.onfocus = () => dbIn.select(); dbIn.onblur = commitDb;
     dbIn.onkeydown = e => { if (e.key === 'Enter') dbIn.blur(); else if (e.key === 'Escape') { dbIn.value = dbText(t.vol); dbIn.blur(); } };
     el.querySelector('.heal').onclick = () => healTrack(t);
-    el.querySelector('.fold').onclick = () => { el.classList.toggle('min'); setTimeout(() => { t.buf && drawWave(t); updateClock(); }, 210); };
+    el.querySelector('.fold').onclick = () => { el.classList.toggle('min'); setTimeout(() => { t.buf && drawWave(t); drawGrid(); updateClock(); }, 210); };
     el.querySelector('.wave').onclick = e => { const r = e.currentTarget.getBoundingClientRect(); seek(((e.clientX - r.left) / r.width) * duration); };
   }
-  await Promise.all(tracks.map(loadTrack));
+  FAST = true; try { await Promise.all(tracks.map(loadTrack)); } finally { FAST = false; }
   duration = Math.max(...tracks.map(t => t.buf.duration)); offset = 0;
   tracks.forEach(drawWave); applyGains(); updateClock(); resetMeters(); $('loadInfo').textContent = `${tracks.length} tracks ready`;
+  renderLcd(); drawGrid(); ensureAnalysis(); refineQuality();
 }
 async function loadTrack(t) {
-  t.buf = await getBuf(`/api/jobs/${S.job.id}/files/${t.st.variants[t.variant]}`);
+  t.buf = await getBuf(trackUrl(t, LOAD, FAST));
   const keys = Object.keys(t.st.variants), names = {split:'Split', cleaned:'Cleaned', healed:'Healed', original:'Original'};
   t.el.querySelector('.vars').innerHTML = keys.length > 1 ? keys.map(k => `<span class="vchip ${k===t.variant?'on':''}" data-v="${k}">${names[k]||k}</span>`).join('') : '';
   t.el.querySelectorAll('.vchip').forEach(c => c.onclick = async () => { t.variant = c.dataset.v; await loadTrack(t); drawWave(t); if (playing) restart(); });
@@ -611,7 +658,7 @@ function drawWave(t) {
   g.fillStyle = COLORS[t.st.name] || '#888';
   for (let i = 0; i < n; i++) { let mx = 0; for (let j = 0; j < step; j += 16) mx = Math.max(mx, Math.abs(d[i*step + j] || 0)); const bh = Math.max(1, mx * h * .9); g.fillRect(i*2, (h-bh)/2, 1.4*dpr, bh); }
 }
-addEventListener('resize', () => { tracks.forEach(t => t.buf && drawWave(t)); updateClock(); });
+addEventListener('resize', () => { tracks.forEach(t => t.buf && drawWave(t)); drawGrid(); updateClock(); });
 const pos = () => playing ? Math.max(0, ctx.currentTime - t0) : offset;
 function startAt(p) {
   const when = ctx.currentTime + 0.06;
@@ -632,6 +679,130 @@ function updateClock() {
 $('play').onclick = async () => { await ctx.resume(); if (playing) { offset = pos(); stopAll(); } else startAt(offset); };
 $('stop').onclick = () => { stopAll(); offset = 0; updateClock(); };
 addEventListener('keydown', e => { if (S.step !== 5 || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return; if (e.code === 'Space') { e.preventDefault(); $('play').click(); } });
+
+/* ---------- key, tempo and transpose ----------
+   The server finds the key / tempo / time signature once (job.analysis) and says "not found" rather than guess.
+   Transpose and tempo are two numbers saved in the project; the server renders every stem to match. */
+const KEY_NAMES = {major:['C','Db','D','Eb','E','F','F#','G','Ab','A','Bb','B'], minor:['C','C#','D','Eb','E','F','F#','G','G#','A','Bb','B']};
+const keyName = (pc, mode) => `${KEY_NAMES[mode][((pc % 12) + 12) % 12]} ${mode}`;
+let AN = null, MIX = {semi:0, tempo:1}, APPLIED = {semi:0, tempo:1}, LOAD = {semi:0, tempo:1}, applying = Promise.resolve(), mixTimer = null;
+let FAST = false, refineToken = 0;  // FAST: the quick ffmpeg version while the best-quality (Rubber Band) one renders
+const mixQuery = (stem, m, fast = false) => { const q = []; if (m.semi && stem !== 'drums') q.push('semi=' + m.semi); if (Math.abs(m.tempo - 1) > 1e-4) q.push('tempo=' + m.tempo.toFixed(4)); if (q.length && fast) q.push('fast=1'); return q.length ? '?' + q.join('&') : ''; };
+const trackUrl = (t, m, fast) => `/api/jobs/${S.job.id}/files/${t.st.variants[t.variant]}${mixQuery(t.st.name, m, fast)}`;
+const sgn = n => (n > 0 ? '+' : '') + n;
+
+function renderLcd() {
+  const hide = !S.job || S.job.req?.goal === 'clean';  // speech clean up has no key or tempo
+  $('lcd').classList.toggle('hidden', hide); if (hide) return;
+  const k = AN?.key, t = AN?.tempo, sig = t?.meter, wait = !AN;
+  const setVal = (id, text, na, chg) => { const el = $(id); el.textContent = text; el.classList.toggle('na', !!na); el.classList.toggle('chg', !!chg); };
+  if (wait) { setVal('keyVal', '…', true); $('keySub').textContent = 'Analyzing…'; $('keyCell').dataset.tip = ''; }
+  else if (k?.found) {
+    setVal('keyVal', keyName(k.pc + MIX.semi, k.mode), false, MIX.semi !== 0);
+    $('keySub').textContent = MIX.semi ? `Original ${keyName(k.pc, k.mode)}` : `Holds for ${Math.round(k.coverage * 100)}% of the song`;
+    $('keyCell').dataset.tip = `Major or minor key found for ${Math.round(k.coverage * 100)}% of the song. Modes such as Lydian are not told apart.`;
+  } else { setVal('keyVal', 'N/A', true); $('keySub').textContent = 'No clear key'; $('keyCell').dataset.tip = k?.reason || 'No key was found'; }
+  $('trVal').value = sgn(MIX.semi); $('trVal').classList.toggle('chg', MIX.semi !== 0);
+  $('trDn').disabled = $('trOctDn').disabled = MIX.semi <= -12; $('trUp').disabled = $('trOctUp').disabled = MIX.semi >= 12;
+  $('trSub').textContent = MIX.semi && k?.found ? `${sgn(MIX.semi)} semitones from the original` : 'semitones, drums stay put';
+  const tp = $('tpVal');
+  if (document.activeElement !== tp) {
+    if (t?.found) { tp.value = (t.bpm * MIX.tempo).toFixed(1); $('tpUnit').textContent = 'BPM'; $('tpSub').textContent = MIX.tempo === 1 ? `Steady for ${Math.round(t.coverage * 100)}% of the song` : `${Math.round(MIX.tempo * 100)}% of ${t.bpm.toFixed(1)}`; }
+    else { tp.value = Math.round(MIX.tempo * 100); $('tpUnit').textContent = '%'; $('tpSub').textContent = wait ? 'Analyzing…' : 'No steady tempo. Speed in %'; }
+  }
+  tp.classList.toggle('chg', Math.abs(MIX.tempo - 1) > 1e-4);
+  $('tpDn').disabled = MIX.tempo <= 0.5; $('tpUp').disabled = MIX.tempo >= 2;
+  $('tpVal').dataset.tip = t?.found ? 'Type a tempo in BPM' : (t?.reason || 'Type a speed in %');
+  setVal('sigVal', sig ? sig.sig : (wait ? '…' : 'N/A'), !sig);
+  $('sigSub').textContent = sig ? '' : wait ? '' : t?.found ? 'Not clear' : '';
+  $('sigCell').dataset.tip = sig ? 'Time signature found from where the accents fall' : 'Only 4/4, 3/4 and 6/8 are looked for, and only when clear';
+  $('mixReset').disabled = !MIX.semi && Math.abs(MIX.tempo - 1) < 1e-4;
+}
+function mixChanged() { renderLcd(); clearTimeout(mixTimer); mixTimer = setTimeout(() => { mixTimer = null; applying = applying.then(doApply); }, 500); }
+const flushMix = () => { if (mixTimer) { clearTimeout(mixTimer); mixTimer = null; applying = applying.then(doApply); } return applying; };
+const setSemi = v => { MIX.semi = Math.max(-12, Math.min(12, Math.round(+v) || 0)); mixChanged(); };
+const setTempo = r => { MIX.tempo = Math.max(0.5, Math.min(2, r)); mixChanged(); };
+$('trDn').onclick = () => setSemi(MIX.semi - 1); $('trUp').onclick = () => setSemi(MIX.semi + 1);
+$('trOctDn').onclick = () => setSemi(MIX.semi - 12); $('trOctUp').onclick = () => setSemi(MIX.semi + 12);
+$('trVal').onfocus = e => e.target.select(); $('trVal').onblur = e => { setSemi(parseInt(e.target.value, 10)); };
+$('trVal').onkeydown = e => { if (e.key === 'Enter') e.target.blur(); else if (e.key === 'Escape') { e.target.value = sgn(MIX.semi); e.target.blur(); } };
+const bpmNow = () => AN?.tempo?.found ? AN.tempo.bpm * MIX.tempo : null;
+$('tpDn').onclick = () => AN?.tempo?.found ? setTempo((bpmNow() - 1) / AN.tempo.bpm) : setTempo(MIX.tempo - 0.01);
+$('tpUp').onclick = () => AN?.tempo?.found ? setTempo((bpmNow() + 1) / AN.tempo.bpm) : setTempo(MIX.tempo + 0.01);
+$('tpVal').onfocus = e => e.target.select();
+$('tpVal').onblur = e => { const v = parseFloat(e.target.value.replace(',', '.')); if (isFinite(v) && v > 0) setTempo(AN?.tempo?.found ? v / AN.tempo.bpm : v / 100); else renderLcd(); };
+$('tpVal').onkeydown = e => { if (e.key === 'Enter') e.target.blur(); else if (e.key === 'Escape') { MIX.tempo = APPLIED.tempo; e.target.blur(); renderLcd(); } };
+$('mixReset').onclick = () => { MIX = {semi:0, tempo:1}; mixChanged(); };
+
+async function doApply() {
+  if (!S.job || S.step !== 5 || (MIX.semi === APPLIED.semi && Math.abs(MIX.tempo - APPLIED.tempo) < 1e-4)) return;
+  const target = {...MIX}, wasPlaying = playing, srcPos = pos() * APPLIED.tempo;  // where we are in the original song
+  stopAll(); $('lcd').classList.add('busy');
+  $('loadInfo').innerHTML = '<span class="spin"></span>Changing key and tempo…';
+  try {
+    await api(`/api/jobs/${S.job.id}/mix`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({semitones:target.semi, tempo:target.tempo})});
+    S.job.mix = {semitones:target.semi, tempo:target.tempo}; LOAD = target; refineToken++;
+    FAST = true; try { await Promise.all(tracks.map(loadTrack)); } finally { FAST = false; }
+    APPLIED = target;
+    Object.keys(buffers).forEach(k => {  // rendered copies for other settings are no longer needed in memory
+      const m = k.match(/\/api\/jobs\/([^/]+)\/files\/([^?]+)(\?.*)?$/);
+      if (m && m[1] === S.job.id && ![false, true].some(f => (m[3] || '') === mixQuery(m[2].split('__')[0], APPLIED, f))) delete buffers[k];
+    });
+    duration = Math.max(...tracks.map(t => t.buf.duration)); offset = Math.min(duration, srcPos / APPLIED.tempo);
+    tracks.forEach(drawWave); drawGrid(); updateClock(); $('loadInfo').textContent = `${tracks.length} tracks ready`;
+    if (wasPlaying) { await ctx.resume(); startAt(offset); }
+    refineQuality();
+  } catch (e) {
+    LOAD = {...APPLIED}; MIX = {...APPLIED}; $('loadInfo').innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  }
+  $('lcd').classList.remove('busy'); renderLcd();
+}
+
+/* the quick version is playable at once; the best-quality render (Rubber Band) arrives later and replaces it */
+async function refineQuality() {
+  if (!MIX.semi && Math.abs(MIX.tempo - 1) < 1e-4) return;
+  const tok = ++refineToken, target = {...APPLIED}, id = S.job.id;
+  $('loadInfo').innerHTML = '<span class="spin"></span>Playing a quick version. Polishing the sound quality…';
+  try {
+    const bufs = await Promise.all(tracks.map(t => getBuf(trackUrl(t, target, false))));
+    if (tok !== refineToken || S.job?.id !== id || APPLIED.semi !== target.semi || APPLIED.tempo !== target.tempo) return;
+    tracks.forEach((t, i) => { t.buf = bufs[i]; }); tracks.forEach(drawWave);
+    if (playing) restart();
+    $('loadInfo').textContent = `${tracks.length} tracks ready · best quality`;
+  } catch { if (tok === refineToken) $('loadInfo').textContent = `${tracks.length} tracks ready (quick version)`; }
+}
+
+/* beat map: faint beat lines over the tracks, stronger bar lines and bar numbers on the ruler */
+function drawGrid() {
+  const t = AN?.tempo, show = !!(t?.found && t.beats?.length && duration && S.step === 5);
+  $('ruler').classList.toggle('hidden', !show);
+  const cv = $('beatgrid'), rc = $('rulerCv'); if (!show) { cv.width = cv.width; return; }
+  const dpr = devicePixelRatio, ink = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#161513';
+  const prep = c => { c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr; const g = c.getContext('2d'); g.scale(dpr, dpr); g.fillStyle = ink; g.font = '600 10px "Space Grotesk",system-ui,sans-serif'; g.textBaseline = 'middle'; return g; };
+  const g = prep(cv), r = prep(rc), W = cv.clientWidth, H = cv.clientHeight, RH = rc.clientHeight;
+  const per = t.meter?.beats_per_bar || 0, d0 = t.meter && t.meter.downbeat != null ? t.meter.downbeat : null, beats = t.beats;
+  const beatPx = (beats[beats.length - 1] - beats[0]) / (beats.length - 1) / APPLIED.tempo / duration * W;
+  const step = [1, 2, 4, 8, 16, 32].find(n => per * beatPx * n >= 36) || 32;
+  r.globalAlpha = .5; r.fillRect(0, RH - 1, W, 1);
+  beats.forEach((bt, i) => {
+    const x = Math.round(bt / APPLIED.tempo / duration * W), bar = d0 != null && ((i - d0) % per + per) % per === 0;
+    g.globalAlpha = bar ? .2 : .06; g.fillRect(x, 0, 1, H);
+    r.globalAlpha = bar ? .55 : .3; r.fillRect(x, RH - (bar ? 12 : 5), 1, bar ? 12 : 5);
+    if (bar && i >= d0) { const n = (i - d0) / per + 1; if ((n - 1) % step === 0) { r.globalAlpha = .75; r.fillText(String(n), x + 4, 9); } }
+  });
+  $('rulerLab').textContent = d0 != null ? 'Bars' : 'Beats';
+}
+$('rulerCv').onclick = e => { const b = e.currentTarget.getBoundingClientRect(); seek((e.clientX - b.left) / b.width * duration); };
+
+async function ensureAnalysis() {  // older projects are analysed the first time they open
+  const id = S.job.id; AN = S.job.analysis || null; renderLcd(); drawGrid();
+  if (AN || S.job.req?.goal === 'clean') return;
+  try { await post(`/api/jobs/${id}/analyze`, {}); } catch { return; }
+  for (let i = 0; i < 100 && S.job?.id === id && !AN; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    try { const j = await api(`/api/jobs/${id}`); if (j.analysis && S.job?.id === id) { S.job.analysis = AN = j.analysis; renderLcd(); drawGrid(); } } catch {}
+  }
+}
 
 /* heal one stem */
 async function healTrack(t) {
@@ -668,6 +839,7 @@ async function renderMix() {
     const what = document.querySelector('input[name=bwhat]:checked').value, fmt = $('bfmt').value;
     go.disabled = true; msg.hidden = true;
     try {
+      await flushMix();
       if (what === 'stems') {
         const r = await post('/api/bounce/stems', {id: S.job.id, fmt});
         if (r.path) say(`Saved the stems to <b>${esc(shortPath(r.path))}</b>`, 'ok');
@@ -794,6 +966,40 @@ refreshLibrary(); setInterval(refreshLibrary, 8000);
 </div>
 <script>
 /* ---------- app updates (installed app only) ---------- */
+function runUpdate(msg, go, onFail) {  // downloads the new installer and hands over to it (the server disappears at the end)
+  go.disabled = true;
+  post('/api/update/install', {}).then(() => {
+    const t = setInterval(async () => {
+      let s; try { s = await api('/api/update/status'); } catch { return; }
+      if (s.phase === 'downloading') msg.textContent = `Downloading… ${Math.round(s.progress * 100)}%`;
+      else if (s.phase === 'installing') msg.textContent = 'Installing. Unmix will reopen when done.';
+      else if (s.phase === 'error') { clearInterval(t); msg.textContent = 'Update failed: ' + s.error; go.disabled = false; go.textContent = 'Retry'; onFail && onFail(); }
+    }, 600);
+  }).catch(e => { msg.textContent = e.message; go.disabled = false; onFail && onFail(); });
+}
+(function () {  // manual check: sidebar footer, info button
+  const box = $('verdlg'), msg = $('verMsg'), notes = $('verNotes'), check = $('verCheck'), go = $('verGo');
+  let installed = false;
+  async function doCheck() {
+    check.disabled = true; go.hidden = true; notes.hidden = true; msg.innerHTML = '<span class="spin"></span>Checking for a newer version…';
+    try {
+      const info = await api('/api/update/check');
+      if (info.available) {
+        msg.textContent = `Unmix ${info.version} is available (${info.size_mb} MB).`;
+        notes.textContent = info.notes || ''; notes.hidden = !info.notes; go.hidden = false; go.textContent = 'Update and restart';
+      } else msg.textContent = 'You have the latest version. (If you are offline, connect and check again.)';
+    } catch (e) { msg.textContent = 'Could not check: ' + e.message; }
+    check.disabled = false;
+  }
+  $('verBtn').onclick = async () => {
+    box.hidden = false; go.hidden = true; notes.hidden = true;
+    try { const v = await api('/api/version'); $('verNum').textContent = v.version; installed = v.can_update; } catch { installed = false; }
+    check.hidden = !installed;
+    if (installed) doCheck(); else msg.textContent = 'Updates are offered by the installed Unmix app. You are running from source.';
+  };
+  check.onclick = doCheck; go.onclick = () => { check.hidden = $('verClose').hidden = true; runUpdate(msg, go, () => { $('verClose').hidden = false; check.hidden = false; }); };
+  $('verClose').onclick = () => box.hidden = true; box.onclick = e => { if (e.target === box) box.hidden = true; };
+})();
 (async function () {
   const box = $('upd'), msg = $('updMsg'), go = $('updGo'), later = $('updLater');
   let info;
@@ -806,14 +1012,8 @@ refreshLibrary(); setInterval(refreshLibrary, 8000);
   box.hidden = false;
   later.onclick = () => { store.set('skipUpdate', info.version); box.hidden = true; };
   go.onclick = async () => {
-    go.disabled = later.hidden = true;
-    try { await post('/api/update/install', {}); } catch (e) { msg.textContent = e.message; return; }
-    const t = setInterval(async () => {
-      let s; try { s = await api('/api/update/status'); } catch { return; }  // server vanishes when the installer takes over
-      if (s.phase === 'downloading') msg.textContent = `Downloading… ${Math.round(s.progress * 100)}%`;
-      else if (s.phase === 'installing') msg.textContent = 'Installing. Unmix will reopen when done.';
-      else if (s.phase === 'error') { clearInterval(t); msg.textContent = 'Update failed: ' + s.error; go.disabled = false; go.textContent = 'Retry'; later.hidden = false; }
-    }, 600);
+    later.hidden = true;
+    runUpdate(msg, go, () => { later.hidden = false; });
   };
 })();
 </script>
