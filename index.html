@@ -280,7 +280,7 @@
 
 <!-- 5 MIXER -->
 <section class="panel" id="p5">
-  <div class="mixhead"><span id="loadInfo"></span><span style="flex:1"></span><span>Space = play/pause · click a waveform to seek</span></div>
+  <div class="mixhead"><span id="loadInfo"></span></div>
   <div class="lcd hidden" id="lcd">
     <div class="cell" id="keyCell" style="min-width:170px"><span class="lab">Key</span><span class="val" id="keyVal">…</span><span class="sub" id="keySub"></span></div>
     <div class="cell"><span class="lab">Transpose</span>
@@ -692,22 +692,22 @@ function renderLcd() {
   if (wait) { setVal('keyVal', '…', true); $('keySub').textContent = 'Analyzing…'; $('keyCell').dataset.tip = ''; }
   else if (k?.found) {
     setVal('keyVal', keyName(k.pc + MIX.semi, k.mode), false, MIX.semi !== 0);
-    $('keySub').textContent = MIX.semi ? `Original ${keyName(k.pc, k.mode)}` : `Holds for ${Math.round(k.coverage * 100)}% of the song`;
+    $('keySub').textContent = MIX.semi ? `Original ${keyName(k.pc, k.mode)}` : '';
     $('keyCell').dataset.tip = `Major or minor key found for ${Math.round(k.coverage * 100)}% of the song. Modes such as Lydian are not told apart.`;
-  } else { setVal('keyVal', 'N/A', true); $('keySub').textContent = 'No clear key'; $('keyCell').dataset.tip = k?.reason || 'No key was found'; }
+  } else { setVal('keyVal', 'N/A', true); $('keySub').textContent = ''; $('keyCell').dataset.tip = k?.reason || 'No key was found'; }
   $('trVal').value = sgn(MIX.semi); $('trVal').classList.toggle('chg', MIX.semi !== 0);
   $('trDn').disabled = MIX.semi <= -12; $('trUp').disabled = MIX.semi >= 12;
-  $('trSub').textContent = MIX.semi && k?.found ? `${sgn(MIX.semi)} semitones from the original` : 'semitones, drums stay put';
+  $('trSub').textContent = MIX.semi ? `${sgn(MIX.semi)} semitones` : '';
   const tp = $('tpVal');
   if (document.activeElement !== tp) {
-    if (t?.found) { tp.value = (t.bpm * MIX.tempo).toFixed(1); $('tpUnit').textContent = 'BPM'; $('tpSub').textContent = MIX.tempo === 1 ? `Steady for ${Math.round(t.coverage * 100)}% of the song` : `${Math.round(MIX.tempo * 100)}% of ${t.bpm.toFixed(1)}`; }
-    else { tp.value = Math.round(MIX.tempo * 100); $('tpUnit').textContent = '%'; $('tpSub').textContent = wait ? 'Analyzing…' : 'No steady tempo. Speed in %'; }
+    if (t?.found) { tp.value = (t.bpm * MIX.tempo).toFixed(1); $('tpUnit').textContent = 'BPM'; $('tpSub').textContent = MIX.tempo === 1 ? '' : `${Math.round(MIX.tempo * 100)}% of ${t.bpm.toFixed(1)}`; }
+    else { tp.value = Math.round(MIX.tempo * 100); $('tpUnit').textContent = '%'; $('tpSub').textContent = wait ? 'Analyzing…' : ''; }
   }
   tp.classList.toggle('chg', Math.abs(MIX.tempo - 1) > 1e-4);
   $('tpDn').disabled = MIX.tempo <= 0.5; $('tpUp').disabled = MIX.tempo >= 2;
   $('tpVal').dataset.tip = t?.found ? 'Type a tempo in BPM' : (t?.reason || 'Type a speed in %');
   setVal('sigVal', sig ? sig.sig : (wait ? '…' : 'N/A'), !sig);
-  $('sigSub').textContent = sig ? '' : wait ? '' : t?.found ? 'Not clear' : '';
+  $('sigSub').textContent = '';
   $('sigCell').dataset.tip = sig ? 'Time signature found from where the accents fall' : 'Only 4/4, 3/4 and 6/8 are looked for, and only when clear';
   $('mixReset').disabled = !MIX.semi && Math.abs(MIX.tempo - 1) < 1e-4;
 }
