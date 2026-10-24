@@ -4,6 +4,8 @@ Everything here is conservative on purpose: when the evidence is weak a field is
 guess. A key or tempo is only reported when it holds for a large part of the song (`coverage`).
 Uses librosa only (already installed for the separator); nothing leaves the Mac.
 """
+import time
+
 import numpy as np
 
 SR = 22050
@@ -21,7 +23,10 @@ MIN_KEY_MARGIN = 0.03   # and beat the runner-up clearly
 MIN_TEMPO_COVERAGE = 0.55
 MAX_TEMPO_DRIFT = 0.025  # the tempo of the first and last part of the song may differ by at most this much
 MIN_BEAT_PEAK = 0.25     # autocorrelation peak that counts as 'the music repeats at this tempo'
-MIN_ON_GRID = 0.6        # share of strong low hits that must fall on the beat grid before a time signature is claimed
+VERSION = 2              # raised when the method changes, so projects analysed with an older one are redone when opened
+MIN_ON_BEAT = 0.45       # share of strong low hits that must land on the tracked beats (chance is about 0.25) before a time signature is claimed
+MIN_BAR_SHARE = 0.06     # least share of the kick accent that the position in a bar must explain
+BEAT_TIGHTNESS = 30      # how firmly the beat tracker keeps to the tempo: low enough to follow a live drummer, high enough to ignore stray hits
 
 
 def _key_label(idx: int) -> tuple[int, str]:
@@ -158,11 +163,11 @@ def _strong_low_hits(env: np.ndarray) -> np.ndarray:
     return pk[env[pk] >= np.percentile(env[pk], 60)]
 
 
-def _grid_share(hits: np.ndarray, fps: float, bpm: float, t0: float) -> float:
-    """Share of the hits that fall on the beat grid of this tempo."""
-    period = fps * 60.0 / bpm
-    off = ((hits - t0 * fps + period / 2) % period) - period / 2
-    return float(np.mean(np.abs(off) / period < 0.12))
+def _on_beat_share(hits: np.ndarray, beats: np.ndarray, period: float) -> float:
+    """Share of the hits that land on a tracked beat. Hits at random places score about 0.25, a band playing the beat well above 0.5.
+    Measured against the beats as followed (not one rigid grid) so a live drummer who drifts a little still counts."""
+    nearest = np.abs(hits[:, None] - beats[None, :]).min(axis=1)
+    return float(np.mean(nearest / period < 0.12))
 
 
 def detect_tempo(y: np.ndarray, accent: np.ndarray | None = None) -> dict | None:
@@ -188,7 +193,7 @@ def detect_tempo(y: np.ndarray, accent: np.ndarray | None = None) -> dict | None
     local = [_refine_bpm(oenv[i * seg: (i + 1) * seg], fps, g)[0] for i in range(parts)]
     if max(local) / min(local) > 1 + MAX_TEMPO_DRIFT:
         return {"found": False, "reason": "The tempo drifts through the song", **out}
-    _, beats = librosa.beat.beat_track(onset_envelope=oenv, sr=SR, hop_length=HOP, bpm=g, tightness=120, trim=False)
+    _, beats = librosa.beat.beat_track(onset_envelope=oenv, sr=SR, hop_length=HOP, bpm=g, tightness=BEAT_TIGHTNESS, trim=False)
     if len(beats) < 8:
         return {"found": False, "reason": "Could not follow a steady beat", **out}
     times = librosa.frames_to_time(beats, sr=SR, hop_length=HOP)
@@ -211,50 +216,95 @@ def detect_tempo(y: np.ndarray, accent: np.ndarray | None = None) -> dict | None
     return res
 
 
+def _low_onsets(y: np.ndarray) -> np.ndarray:
+    """Rising low-band (under 150 Hz) energy per frame: where the kick and bass land."""
+    import librosa  # noqa: PLC0415
+
+    sp = np.abs(librosa.stft(y, n_fft=1024, hop_length=HOP))
+    low = np.log1p(10 * sp[librosa.fft_frequencies(sr=SR, n_fft=1024) < 150].sum(axis=0))
+    return np.maximum(0.0, np.diff(low, prepend=low[0]))
+
+
+def _bar_profile(rel: np.ndarray, k: int) -> tuple[float, float]:
+    """How much of the beat-to-beat accent is explained by the position in a bar of k beats (0 to 1), and whether the
+    first and second half of the song agree on that pattern (correlation, 1.0 when k is 2 and there is nothing to compare)."""
+    prof = np.array([rel[j::k].mean() for j in range(k)])
+    ve = float(prof.var() / (rel.var() + 1e-12))
+    if k < 3:
+        return ve, 1.0
+    h = len(rel) // 2
+    idx = np.arange(len(rel)) % k
+    p1 = np.array([rel[:h][idx[:h] == j].mean() for j in range(k)]); p2 = np.array([rel[h:][idx[h:] == j].mean() for j in range(k)])
+    return ve, float(np.corrcoef(p1, p2)[0, 1]) if p1.std() > 0 and p2.std() > 0 else 0.0
+
+
 def detect_meter(y: np.ndarray, beat_times: np.ndarray, period: float) -> dict | None:
     """4/4, 3/4 or 6/8 from where the accents fall relative to the beats; None when it is not clearly one of them."""
     import librosa  # noqa: PLC0415
+    from scipy.ndimage import uniform_filter1d  # noqa: PLC0415
 
-    env = librosa.onset.onset_strength(y=y, sr=SR, hop_length=HOP, fmax=250)  # kick / bass hits carry the bar
+    env = librosa.onset.onset_strength(y=y, sr=SR, hop_length=HOP, fmax=250)  # for the ternary (in-between) test
+    low = _low_onsets(y)  # kick and bass hits carry the bar
+    n_fr = min(len(env), len(low))
     fps = SR / HOP
     fr = np.round(np.asarray(beat_times) * fps).astype(int)
-    fr = fr[(fr > 2) & (fr < len(env) - 3)]
-    if len(fr) < 24 or not np.any(env):
+    fr = fr[(fr > 2) & (fr < n_fr - 3)]
+    if len(fr) < 24 or not np.any(low):
         return None
 
-    def at(frames) -> np.ndarray:
-        return np.array([env[max(0, int(f) - 1): int(f) + 2].max() for f in frames])
+    def at(sig, frames, w: int = 1) -> np.ndarray:
+        return np.array([sig[max(0, int(f) - w): int(f) + w + 1].max() for f in frames])
 
-    # the strongest low hits (kick, bass) must sit on the beat grid, otherwise the grid is not what the band is playing
-    hits = _strong_low_hits(env)
-    if not len(hits) or _grid_share(hits, fps, 60.0 / period, float(beat_times[0])) < MIN_ON_GRID:
+    # judge the longest stretch where the kick and bass are playing: a drumless intro or breakdown has no bar pattern and shifts the count
+    a0 = at(low, fr, 2)
+    live = uniform_filter1d(a0, 9, mode="nearest") > 0.3 * (np.median(a0[a0 > 0]) if np.any(a0 > 0) else 0)
+    runs = np.flatnonzero(np.diff(np.r_[0, live.astype(int), 0]))
+    if not len(runs):
+        return None
+    st, en = max(zip(runs[::2], runs[1::2]), key=lambda r: r[1] - r[0])
+    fr = fr[st:en]
+    if len(fr) < 24:
         return None
 
-    acc = at(fr)
-    z = (acc - acc.mean()) / (acc.std() + 1e-9)
-    n = len(z)
+    # the strongest low hits (kick, bass) must land on the beats, otherwise the beats are not what the band is playing
+    hits = _strong_low_hits(low)
+    hits = hits[(hits >= fr[0] - 2) & (hits <= fr[-1] + 2)]
+    if len(hits) < 16 or _on_beat_share(hits, fr, fps * period) < MIN_ON_BEAT:
+        return None
 
-    def acf(lag: int) -> float:
-        return float(np.mean(z[:-lag] * z[lag:])) if n > lag * 3 else 0.0
-
-    a = {k: acf(k) for k in (2, 3, 4, 6, 8)}
+    # the tracked beat can sit a few frames off the hit it follows, so try a few widths and keep the clearest pattern for each bar length
+    n = len(fr)
+    need = {k: max(MIN_BAR_SHARE, 4.0 * k / n) for k in (2, 3, 4)}  # chance level for the share explained is about k / n; ask for a few times that
+    ve = {k: 0.0 for k in (2, 3, 4)}
+    for w in (1, 2, 3):
+        a_w = at(low, fr, w)
+        # accent relative to the neighbourhood (24 beats is whole bars of 3 and of 4), so loud and quiet sections do not read as a pattern
+        rel = a_w / (uniform_filter1d(a_w, 24, mode="nearest") + 1e-9) - 1.0
+        for k in (2, 3, 4):
+            v, agree = _bar_profile(rel, k)
+            if agree >= 0.5 and v > ve[k]:
+                ve[k] = v
+    ok = {k: ve[k] >= need[k] for k in (3, 4)}
     # ternary feel: more energy a third of the way between beats than half way
-    mid = np.array([((at([f0 + round((f1 - f0) / 3)])[0] + at([f0 + round(2 * (f1 - f0) / 3)])[0]) / 2, at([f0 + round((f1 - f0) / 2)])[0])
+    mid = np.array([((at(env, [f0 + round((f1 - f0) / 3)])[0] + at(env, [f0 + round(2 * (f1 - f0) / 3)])[0]) / 2, at(env, [f0 + round((f1 - f0) / 2)])[0])
                     for f0, f1 in zip(fr[:-1], fr[1:])])
-    ternary = bool(len(mid)) and mid[:, 0].mean() > 1.3 * mid[:, 1].mean() and mid[:, 0].mean() > 0.15 * acc.mean()
-    s3, s4 = (a[3] + a[6]) / 2, (a[4] + a[8]) / 2
-    if ternary and a[2] > 0.15 and a[2] > max(a[3], a[4]) + 0.05:
+    ternary = bool(len(mid)) and mid[:, 0].mean() > 1.3 * mid[:, 1].mean() and mid[:, 0].mean() > 0.15 * at(env, fr).mean()
+    if ternary and ve[2] >= need[2] and ve[2] > 2 * max(ve[3], ve[4]):
         sig, per = "6/8", 2
-    elif not ternary and s3 > 0.15 and s3 - s4 > 0.08 and a[3] > a[2] and 60.0 / period <= 150:  # faster is often 6/8 felt in one
+    elif not ternary and ok[3] and ve[3] > 2 * ve[4] and 60.0 / period <= 150:  # faster is often 6/8 felt in one
         sig, per = "3/4", 3
-    elif not ternary and s4 > 0.15 and s4 - s3 > 0.08:
+    elif not ternary and ok[4] and ve[4] > 2 * ve[3]:
         sig, per = "4/4", 4
     else:
         return None
+    acc = at(low, fr, 2)
     means = np.array([acc[k::per].mean() for k in range(per)])
     srt = np.sort(means)[::-1]
     # which beat starts the bar: only claimed when one position clearly carries more weight than the rest
-    down = int(np.argmax(means)) if srt[0] >= 1.15 * srt[1] else None
+    h = len(acc) // 2
+    halves = {int(np.argmax([acc[:h][np.arange(h) % per == j].mean() for j in range(per)])),
+              int(np.argmax([acc[h:][(np.arange(len(acc) - h) + h) % per == j].mean() for j in range(per)]))}
+    down = int(np.argmax(means)) if srt[0] >= 1.3 * srt[1] and len(halves) == 1 else None  # same answer in both halves of the song
     return {"sig": sig, "beats_per_bar": per, "downbeat": down}
 
 
@@ -273,7 +323,7 @@ def analyze_arrays(mix: np.ndarray, harmonic: np.ndarray | None = None, bass: np
 
     if harmonic is None:
         harmonic = librosa.effects.harmonic(mix, margin=3.0)
-    res: dict = {"version": 1}
+    res: dict = {"version": VERSION, "at": round(time.time())}
     try:
         res["key"] = detect_key(harmonic, bass)
     except Exception as e:  # noqa: BLE001  (an analysis failure must never break a project)
@@ -299,7 +349,7 @@ def analyze_project(files: dict[str, "object"], mix_path) -> dict:
     if "drums" in files and pitched:
         harmonic = sum(load(files[k]) for k in pitched)
     if "cleaned" in files:  # voice clean up of speech: no music to analyse
-        return {"version": 1, "key": {"found": False, "reason": "Speech clean up has no musical key"},
+        return {"version": VERSION, "key": {"found": False, "reason": "Speech clean up has no musical key"},
                 "tempo": {"found": False, "reason": "Speech clean up has no beat"}}
     return analyze_arrays(mix, harmonic, load(files["bass"]) if "bass" in files else None,
                           load(files["drums"]) if "drums" in files else None)

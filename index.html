@@ -153,23 +153,24 @@
   @media (max-width:900px) { .choices { grid-template-columns:1fr; } }
 
   /* key / tempo / transpose display (modelled on the Logic Pro transport display) */
-  .lcd { display:flex; flex-wrap:wrap; gap:1px; background:#2a2a27; border:1px solid #2a2a27; border-radius:12px; overflow:hidden; margin-bottom:12px; box-shadow:var(--shadow); transition:opacity .15s; }
+  .lcd { display:flex; background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; margin-bottom:12px; box-shadow:var(--shadow); transition:opacity .15s; }
   .lcd.busy { opacity:.6; pointer-events:none; }
-  .lcd .cell { display:flex; flex-direction:column; justify-content:center; gap:3px; padding:9px 16px 8px; background:#151513; color:#ecebe6; min-width:118px; }
-  .lcd .cell.end { margin-left:auto; justify-content:center; flex-direction:row; align-items:center; gap:8px; min-width:0; }
-  .lcd .lab { font-size:10px; letter-spacing:.11em; text-transform:uppercase; color:#8c8a82; font-weight:600; }
-  .lcd .val { font:600 22px/1.15 ui-monospace,"SF Mono",Menlo,monospace; color:#f3f1ea; font-variant-numeric:tabular-nums; letter-spacing:-.02em; white-space:nowrap; }
-  .lcd .val.na { color:#6e6c65; font-size:18px; }
+  .lcd .cell { flex:1 1 0; display:flex; flex-direction:column; justify-content:center; gap:3px; padding:10px 18px 9px; min-width:0; border-left:1px solid var(--line); }
+  .lcd .cell:first-child { border-left:0; }
+  .lcd .cell.end { flex:none; justify-content:center; flex-direction:row; align-items:center; padding:0 16px; }
+  .lcd .lab { font-size:10px; letter-spacing:.11em; text-transform:uppercase; color:var(--mute); font-weight:600; }
+  .lcd .val { font-weight:600; font-size:22px; line-height:1.15; color:var(--ink); font-variant-numeric:tabular-nums; letter-spacing:-.02em; white-space:nowrap; }
+  .lcd .val.na { color:var(--mute); font-size:18px; }
   .lcd .val.chg, .lcd input.val.chg { color:var(--accent); }
-  .lcd .sub { font-size:11px; color:#8c8a82; min-height:15px; max-width:230px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lcd .sub { font-size:11.5px; color:var(--mute); min-height:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .lcd .ctrl { display:flex; align-items:center; gap:3px; }
-  .lcd .unit { font-size:11px; color:#8c8a82; font-weight:600; margin-left:2px; }
+  .lcd .unit { font-size:11px; color:var(--mute); font-weight:600; margin-left:2px; }
   .lcd input.val { width:76px; padding:0 2px; border:1px solid transparent; border-radius:6px; background:transparent; text-align:center; outline:none; }
   .lcd input.val.sm { width:52px; }
-  .lcd input.val:hover { border-color:#3a3a36; } .lcd input.val:focus { border-color:var(--accent); background:#0e0e0d; }
-  .lcd .lb { height:26px; min-width:26px; padding:0 7px; border-radius:7px; border:0; background:#262623; color:#ecebe6; font:600 14px inherit; cursor:pointer; }
-  .lcd .lb:hover:not(:disabled) { background:#34342f; } .lcd .lb:disabled { opacity:.3; cursor:not-allowed; }
-  .lcd .lb.t { font-size:10.5px; letter-spacing:.02em; padding:0 6px; }
+  .lcd input.val:hover { border-color:var(--line); } .lcd input.val:focus { border-color:var(--accent); background:var(--track); }
+  .lcd .lb { height:26px; min-width:26px; padding:0 7px; border-radius:7px; border:1px solid var(--line); background:var(--track); color:var(--ink); font-family:inherit; font-weight:600; font-size:14px; cursor:pointer; }
+  .lcd .lb:hover:not(:disabled) { background:var(--hover); } .lcd .lb:disabled { opacity:.3; cursor:not-allowed; }
+  .lcd .lb.t { font-size:12px; letter-spacing:.02em; padding:0 10px; }
   .ruler { display:grid; grid-template-columns:var(--ctlw) 1fr; height:26px; border-bottom:1px solid var(--line); background:var(--card); }
   .ruler .rl { display:flex; align-items:center; padding:0 12px; border-right:1px solid var(--line); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--mute); font-weight:600; }
   .ruler .rw { position:relative; cursor:pointer; }
@@ -283,13 +284,13 @@
   <div class="lcd hidden" id="lcd">
     <div class="cell" id="keyCell" style="min-width:170px"><span class="lab">Key</span><span class="val" id="keyVal">…</span><span class="sub" id="keySub"></span></div>
     <div class="cell"><span class="lab">Transpose</span>
-      <div class="ctrl"><button class="lb t" id="trOctDn" data-tip="Down an octave">&minus;8va</button><button class="lb" id="trDn" data-tip="Down a semitone">&minus;</button><input class="val sm" id="trVal" value="0" aria-label="Semitones" data-tip="Semitones. Type a number from -12 to 12"><button class="lb" id="trUp" data-tip="Up a semitone">+</button><button class="lb t" id="trOctUp" data-tip="Up an octave">+8va</button></div>
+      <div class="ctrl"><button class="lb" id="trDn" data-tip="Down a semitone">&minus;</button><input class="val sm" id="trVal" value="0" aria-label="Semitones" data-tip="Semitones. Type a number from -12 to 12"><button class="lb" id="trUp" data-tip="Up a semitone">+</button></div>
       <span class="sub" id="trSub">semitones, drums stay put</span></div>
     <div class="cell"><span class="lab">Tempo</span>
       <div class="ctrl"><button class="lb" id="tpDn" data-tip="Slower">&minus;</button><input class="val" id="tpVal" value="" aria-label="Tempo"><button class="lb" id="tpUp" data-tip="Faster">+</button><span class="unit" id="tpUnit">BPM</span></div>
       <span class="sub" id="tpSub"></span></div>
     <div class="cell" id="sigCell" style="min-width:96px"><span class="lab">Signature</span><span class="val" id="sigVal">…</span><span class="sub" id="sigSub"></span></div>
-    <div class="cell end"><button class="lb t" id="mixReset" data-tip="Back to the original key and tempo">Reset</button></div>
+    <div class="cell end"><button class="lb t" id="reDetect" data-tip="Find the key, tempo and time signature again from the stems in this project">Detect again</button><button class="lb t" id="mixReset" data-tip="Back to the original key and tempo">Reset</button></div>
   </div>
   <div class="daw" id="daw"><div class="lane" id="lane"><div id="playhead"></div>
     <div class="ruler hidden" id="ruler"><div class="rl" id="rulerLab">Bars</div><div class="rw"><canvas id="rulerCv"></canvas></div></div>
@@ -322,14 +323,6 @@
   <div class="help" style="border:0;padding-top:0">The project file goes to the Trash, so you can still put it back from there.</div>
   <div class="err" id="delErr" hidden></div>
   <div class="row" style="justify-content:flex-end"><button class="btn" id="delCancel">Cancel</button><button class="btn pri" id="delGo">Move to Trash</button></div>
-</div></div>
-<div id="savedlg" class="modal" hidden><div class="box" role="dialog" aria-label="Save this unmix">
-  <h3>Your unmix is ready</h3>
-  <div class="stat" id="saveName"></div>
-  <div class="help" style="border:0;padding-top:0">Save it where you want it. It is one <b>.umx</b> file you can open again any time. Until you do, it stays in Recent unmixes.</div>
-  <div class="path" id="savePath"></div>
-  <div class="err" id="saveErr" hidden></div>
-  <div class="row" style="justify-content:flex-end"><button class="btn" id="saveLater">Not now</button><button class="btn pri" id="saveGo">Save…</button></div>
 </div></div>
 <div id="bnc" class="modal" hidden><div class="box" role="dialog" aria-label="Bounce">
   <h3>Bounce</h3>
@@ -560,7 +553,7 @@ $('goalGo').onclick = async () => {
 /* ---------- 4 process ---------- */
 function startRun() {
   clearInterval(runTimer); $('runTitle').textContent = 'Processing…'; $('runSub').textContent = S.source.title;
-  runTimer = setInterval(async () => { S.job = await api(`/api/jobs/${S.job.id}`); drawRun(); if (S.job.status === 'done') { clearInterval(runTimer); await refreshLibrary(); await openMixer(); askSave(); } if (S.job.status === 'error') clearInterval(runTimer); }, 1200);
+  runTimer = setInterval(async () => { S.job = await api(`/api/jobs/${S.job.id}`); drawRun(); if (S.job.status === 'done') { clearInterval(runTimer); await refreshLibrary(); await openMixer(); } if (S.job.status === 'error') clearInterval(runTimer); }, 1200);
   drawRun();
 }
 function drawRun() {
@@ -703,7 +696,7 @@ function renderLcd() {
     $('keyCell').dataset.tip = `Major or minor key found for ${Math.round(k.coverage * 100)}% of the song. Modes such as Lydian are not told apart.`;
   } else { setVal('keyVal', 'N/A', true); $('keySub').textContent = 'No clear key'; $('keyCell').dataset.tip = k?.reason || 'No key was found'; }
   $('trVal').value = sgn(MIX.semi); $('trVal').classList.toggle('chg', MIX.semi !== 0);
-  $('trDn').disabled = $('trOctDn').disabled = MIX.semi <= -12; $('trUp').disabled = $('trOctUp').disabled = MIX.semi >= 12;
+  $('trDn').disabled = MIX.semi <= -12; $('trUp').disabled = MIX.semi >= 12;
   $('trSub').textContent = MIX.semi && k?.found ? `${sgn(MIX.semi)} semitones from the original` : 'semitones, drums stay put';
   const tp = $('tpVal');
   if (document.activeElement !== tp) {
@@ -718,12 +711,11 @@ function renderLcd() {
   $('sigCell').dataset.tip = sig ? 'Time signature found from where the accents fall' : 'Only 4/4, 3/4 and 6/8 are looked for, and only when clear';
   $('mixReset').disabled = !MIX.semi && Math.abs(MIX.tempo - 1) < 1e-4;
 }
-function mixChanged() { renderLcd(); clearTimeout(mixTimer); mixTimer = setTimeout(() => { mixTimer = null; applying = applying.then(doApply); }, 500); }
+function mixChanged() { renderLcd(); clearTimeout(mixTimer); mixTimer = setTimeout(() => { mixTimer = null; applying = applying.then(doApply); }, 200); }
 const flushMix = () => { if (mixTimer) { clearTimeout(mixTimer); mixTimer = null; applying = applying.then(doApply); } return applying; };
 const setSemi = v => { MIX.semi = Math.max(-12, Math.min(12, Math.round(+v) || 0)); mixChanged(); };
 const setTempo = r => { MIX.tempo = Math.max(0.5, Math.min(2, r)); mixChanged(); };
 $('trDn').onclick = () => setSemi(MIX.semi - 1); $('trUp').onclick = () => setSemi(MIX.semi + 1);
-$('trOctDn').onclick = () => setSemi(MIX.semi - 12); $('trOctUp').onclick = () => setSemi(MIX.semi + 12);
 $('trVal').onfocus = e => e.target.select(); $('trVal').onblur = e => { setSemi(parseInt(e.target.value, 10)); };
 $('trVal').onkeydown = e => { if (e.key === 'Enter') e.target.blur(); else if (e.key === 'Escape') { e.target.value = sgn(MIX.semi); e.target.blur(); } };
 const bpmNow = () => AN?.tempo?.found ? AN.tempo.bpm * MIX.tempo : null;
@@ -732,6 +724,18 @@ $('tpUp').onclick = () => AN?.tempo?.found ? setTempo((bpmNow() + 1) / AN.tempo.
 $('tpVal').onfocus = e => e.target.select();
 $('tpVal').onblur = e => { const v = parseFloat(e.target.value.replace(',', '.')); if (isFinite(v) && v > 0) setTempo(AN?.tempo?.found ? v / AN.tempo.bpm : v / 100); else renderLcd(); };
 $('tpVal').onkeydown = e => { if (e.key === 'Enter') e.target.blur(); else if (e.key === 'Escape') { MIX.tempo = APPLIED.tempo; e.target.blur(); renderLcd(); } };
+$('reDetect').onclick = async () => {
+  const id = S.job.id, was = AN?.at, b = $('reDetect'); b.disabled = true; b.textContent = 'Detecting…';
+  try {
+    await post(`/api/jobs/${id}/analyze?force=true`, {});
+    for (let i = 0; i < 150 && S.job?.id === id; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const j = await api(`/api/jobs/${id}`);
+      if (j.analysis && !j.analyzing && j.analysis.at !== was) { S.job.analysis = AN = j.analysis; renderLcd(); drawGrid(); break; }
+    }
+  } catch {}
+  b.disabled = false; b.textContent = 'Detect again';
+};
 $('mixReset').onclick = () => { MIX = {semi:0, tempo:1}; mixChanged(); };
 
 async function doApply() {
@@ -794,13 +798,14 @@ function drawGrid() {
 }
 $('rulerCv').onclick = e => { const b = e.currentTarget.getBoundingClientRect(); seek((e.clientX - b.left) / b.width * duration); };
 
+const ANV = 2;  // analysis method version (same as analysis.py VERSION); older results are redone when a project opens
 async function ensureAnalysis() {  // older projects are analysed the first time they open
   const id = S.job.id; AN = S.job.analysis || null; renderLcd(); drawGrid();
-  if (AN || S.job.req?.goal === 'clean') return;
+  if ((AN && AN.version >= ANV) || S.job.req?.goal === 'clean') return;
   try { await post(`/api/jobs/${id}/analyze`, {}); } catch { return; }
-  for (let i = 0; i < 100 && S.job?.id === id && !AN; i++) {
+  for (let i = 0; i < 100 && S.job?.id === id && !(AN && AN.version >= ANV); i++) {
     await new Promise(r => setTimeout(r, 2000));
-    try { const j = await api(`/api/jobs/${id}`); if (j.analysis && S.job?.id === id) { S.job.analysis = AN = j.analysis; renderLcd(); drawGrid(); } } catch {}
+    try { const j = await api(`/api/jobs/${id}`); if (j.analysis && j.analysis.version >= ANV && S.job?.id === id) { S.job.analysis = AN = j.analysis; renderLcd(); drawGrid(); } } catch {}
   }
 }
 
@@ -857,21 +862,6 @@ async function renderMix() {
   };
 })();
 
-/* after a fresh unmix finishes: offer to save it under a name and place of the user's choice */
-function askSave() {
-  const it = LIB.find(x => x.id === S.job?.id); $('saveName').textContent = S.job?.title || ''; $('saveErr').hidden = true;
-  $('savePath').textContent = it ? 'Now in: ' + shortPath(it.path) : '';
-  $('savedlg').hidden = false;
-}
-$('saveLater').onclick = () => $('savedlg').hidden = true;
-$('saveGo').onclick = async () => {
-  $('saveErr').hidden = true;
-  try {
-    const r = await post(`/api/projects/${S.job.id}/save`, {});
-    if (!r.id) return;  // save panel cancelled: keep the prompt open
-    S.job.id = S.source.id = r.id; await refreshLibrary(); $('savedlg').hidden = true; $('loadInfo').textContent = `Saved to ${shortPath(r.path)}`;
-  } catch (e) { $('saveErr').textContent = e.message; $('saveErr').hidden = false; }
-};
 $('copyBtn').onclick = async () => {
   try { const r = await post(`/api/projects/${S.job.id}/copy`, {}); if (r.id) { await refreshLibrary(); $('loadInfo').textContent = `Copy saved to ${shortPath(r.path)}`; } } catch (e) { alert(e.message); }
 };

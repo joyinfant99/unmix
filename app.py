@@ -591,7 +591,7 @@ def run_analysis(job_id: str) -> None:
         files = {st["name"]: out / st["variants"][st["default"]] for st in job["stems"]}
         job["analysis"] = analysis.analyze_project({k: p for k, p in files.items() if p.exists()}, out / "source.wav")
     except Exception as e:  # noqa: BLE001  (analysis is a bonus: it must never get in the way of the project)
-        job["analysis"] = {"version": 1, "key": {"found": False, "reason": f"Analysis failed: {e}"},
+        job["analysis"] = {"version": analysis.VERSION, "key": {"found": False, "reason": f"Analysis failed: {e}"},
                            "tempo": {"found": False, "reason": f"Analysis failed: {e}"}}
     finally:
         job.pop("analyzing", None)
@@ -931,7 +931,8 @@ def save_copy(pid: str):
     import webview  # noqa: PLC0415
 
     src = pdir(pid)
-    to = _first(_dialog(webview.FileDialog.SAVE, directory=str(DATA), save_filename=src.name))
+    home = Path.home() / "Documents"  # not the library folder: the project already lives there, so the panel would ask to replace it
+    to = _first(_dialog(webview.FileDialog.SAVE, directory=str(home if home.is_dir() else Path.home()), save_filename=src.name))
     if not to:
         return {"id": None}
     dst = Path(to)
@@ -1317,12 +1318,12 @@ def set_mix(jid: str, req: MixReq):
 
 
 @app.post("/api/jobs/{jid}/analyze")
-def analyze_job(jid: str):
-    """Key, tempo and time signature of a finished project (older projects are analysed the first time they open)."""
+def analyze_job(jid: str, force: bool = False):
+    """Key, tempo and time signature of a finished project (older projects are analysed the first time they open; `force` redoes it on request)."""
     job = jobs.get(jid)
     if not job or job.get("status") != "done":
         raise HTTPException(404)
-    if "analysis" not in job and not job.get("analyzing"):
+    if (force or job.get("analysis", {}).get("version", 0) < analysis.VERSION) and not job.get("analyzing"):
         job["analyzing"] = True
         tasks.put(("analyze", jid))
     return {"ok": True}
