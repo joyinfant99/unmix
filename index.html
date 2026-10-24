@@ -977,7 +977,7 @@ function runUpdate(msg, go, onFail) {  // downloads the new installer and hands 
       if (info.available) {
         msg.textContent = `Unmix ${info.version} is available (${info.size_mb} MB).`;
         notes.textContent = info.notes || ''; notes.hidden = !info.notes; go.hidden = false; go.textContent = 'Update and restart';
-      } else msg.textContent = 'You have the latest version. (If you are offline, connect and check again.)';
+      } else msg.textContent = info.error || 'You have the latest version.';
     } catch (e) { msg.textContent = 'Could not check: ' + e.message; }
     check.disabled = false;
   }

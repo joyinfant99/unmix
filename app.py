@@ -29,6 +29,13 @@ from pydantic import BaseModel
 import analysis
 import openq
 
+try:  # the packaged Python has no system certificates, so https (update check, downloads) fails without these
+    import certifi
+
+    os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+except ImportError:
+    pass
+
 ROOT = Path(__file__).parent  # read-only resources (index.html, vendor/); inside the bundle when frozen
 # Writable state: next to the code in dev, in Application Support when running as the packaged app
 STATE = Path.home() / "Library" / "Application Support" / "Unmix" if getattr(sys, "frozen", False) else ROOT
@@ -1069,8 +1076,8 @@ def version():
 def update_check():
     try:
         rel = _latest_release()
-    except Exception:  # noqa: BLE001  (offline, rate-limited, no releases yet: just say nothing new)
-        return {"available": False}
+    except Exception as e:  # noqa: BLE001  (offline or the server is down: say so rather than claim you are up to date)
+        return {"available": False, "error": "Could not reach the update server (" + (str(getattr(e, "reason", "") or e)[:120]) + ")"}
     if not rel:
         return {"available": False}
     return {"available": True, "version": rel["version"], "notes": rel["notes"], "size_mb": round(rel["size"] / 1e6)}
